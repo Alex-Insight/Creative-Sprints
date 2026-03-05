@@ -7,7 +7,7 @@
   <script crossorigin="" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin="" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -194,6 +194,9 @@
     .room-code-hint {
       font-size: 11px; color: #555; letter-spacing: 1px; margin-bottom: 24px;
     }
+    .room-error {
+      font-size: 11px; color: #cc6666; letter-spacing: 1px; margin-top: 12px;
+    }
     .connection-bar {
       position: fixed; top: 16px; right: 20px; display: flex;
       align-items: center; gap: 10px; z-index: 1000;
@@ -204,14 +207,14 @@
       width: 8px; height: 8px; border-radius: 50%;
       background: #4a7c59; box-shadow: 0 0 6px rgba(74,124,89,0.5);
     }
-    .connection-dot.disconnected {
-      background: #7c4a4a; box-shadow: 0 0 6px rgba(124,74,74,0.5);
-    }
     .connection-text {
       font-size: 9px; letter-spacing: 2px; color: #A8B0B0; text-transform: uppercase;
     }
     .connection-code {
       font-size: 10px; letter-spacing: 3px; color: #8B7D8B; font-weight: 500;
+    }
+    .saving-indicator {
+      font-size: 9px; color: #4a7c59; letter-spacing: 1px;
     }
   </style>
 </head>
@@ -220,6 +223,10 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback, memo } = React;
+
+    const SUPABASE_URL = 'https://otomsztbgdopegghsvih.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90b21zenRiZ2RvcGVnZ2hzdmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3NDIyNTUsImV4cCI6MjA4ODMxODI1NX0.YvPndfIOkbINaVj7Om8k-GNLiN8An6MRojcLGouZgfM';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const CANVAS_WIDTH = 5000;
     const CANVAS_HEIGHT = 3000;
@@ -247,28 +254,28 @@
     ];
 
     function generateRoomCode() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '';
-      for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      var code = '';
+      for (var i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
       return code;
     }
 
     function calculateFontSize(text, width, height) {
       if (!text || text.trim() === '') return 15;
-      const textLength = text.length;
-      let fontSize = 22;
-      if (textLength > 200) fontSize = 10;
-      else if (textLength > 150) fontSize = 11;
-      else if (textLength > 100) fontSize = 12;
-      else if (textLength > 80) fontSize = 13;
-      else if (textLength > 60) fontSize = 14;
-      else if (textLength > 40) fontSize = 15;
-      else if (textLength > 20) fontSize = 17;
-      const availableHeight = height - 24;
-      const availableWidth = width - 24;
-      const estimatedLines = Math.ceil(textLength / (availableWidth / (fontSize * 0.6)));
-      if (estimatedLines * fontSize * 1.4 > availableHeight) fontSize = Math.max(10, fontSize - 2);
-      return Math.max(10, Math.min(22, fontSize));
+      var len = text.length;
+      var fs = 22;
+      if (len > 200) fs = 10;
+      else if (len > 150) fs = 11;
+      else if (len > 100) fs = 12;
+      else if (len > 80) fs = 13;
+      else if (len > 60) fs = 14;
+      else if (len > 40) fs = 15;
+      else if (len > 20) fs = 17;
+      var aw = width - 24;
+      var ah = height - 24;
+      var lines = Math.ceil(len / (aw / (fs * 0.6)));
+      if (lines * fs * 1.4 > ah) fs = Math.max(10, fs - 2);
+      return Math.max(10, Math.min(22, fs));
     }
 
     function compressImage(dataUrl, maxWidth, quality, callback) {
@@ -278,438 +285,329 @@
         var ratio = Math.min(maxWidth / img.width, 1);
         canvas.width = img.width * ratio;
         canvas.height = img.height * ratio;
-        var ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
         callback(canvas.toDataURL('image/jpeg', quality), canvas.width, canvas.height);
       };
       img.src = dataUrl;
     }
 
-    const ContainerBox = memo(function ContainerBox({ box, onResize, onMove, zoom }) {
-      const [isResizing, setIsResizing] = useState(false);
-      const [isDragging, setIsDragging] = useState(false);
-      const startRef = useRef({});
-
-      const handleDragStart = function(e) {
-        e.stopPropagation();
-        setIsDragging(true);
-        startRef.current = { x: e.clientX, y: e.clientY, boxX: box.x, boxY: box.y };
-      };
-
-      const handleResizeStart = function(e) {
-        e.stopPropagation();
-        setIsResizing(true);
-        startRef.current = { x: e.clientX, y: e.clientY, width: box.width, height: box.height };
-      };
+    var ContainerBox = memo(function ContainerBox(props) {
+      var box = props.box, onResize = props.onResize, onMove = props.onMove, zoom = props.zoom;
+      var [isResizing, setIsResizing] = useState(false);
+      var [isDragging, setIsDragging] = useState(false);
+      var startRef = useRef({});
 
       useEffect(function() {
         if (!isDragging) return;
-        var handleMouseMove = function(e) {
+        var fn = function(e) {
           var dx = (e.clientX - startRef.current.x) / zoom;
           var dy = (e.clientY - startRef.current.y) / zoom;
-          onMove(box.id, Math.round((startRef.current.boxX + dx) / GRID_SNAP) * GRID_SNAP, Math.round((startRef.current.boxY + dy) / GRID_SNAP) * GRID_SNAP);
+          onMove(box.id, Math.round((startRef.current.bx + dx) / GRID_SNAP) * GRID_SNAP, Math.round((startRef.current.by + dy) / GRID_SNAP) * GRID_SNAP);
         };
-        var handleMouseUp = function() { setIsDragging(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isDragging, box.id, onMove, zoom]);
+        var up = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isDragging]);
 
       useEffect(function() {
         if (!isResizing) return;
-        var handleMouseMove = function(e) {
+        var fn = function(e) {
           var dx = (e.clientX - startRef.current.x) / zoom;
           var dy = (e.clientY - startRef.current.y) / zoom;
-          onResize(box.id, Math.max(200, Math.round((startRef.current.width + dx) / GRID_SNAP) * GRID_SNAP), Math.max(150, Math.round((startRef.current.height + dy) / GRID_SNAP) * GRID_SNAP));
+          onResize(box.id, Math.max(200, Math.round((startRef.current.w + dx) / GRID_SNAP) * GRID_SNAP), Math.max(150, Math.round((startRef.current.h + dy) / GRID_SNAP) * GRID_SNAP));
         };
-        var handleMouseUp = function() { setIsResizing(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isResizing, box.id, onResize, zoom]);
+        var up = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isResizing]);
 
       return React.createElement('div', { className: 'container-box', style: { left: box.x, top: box.y, width: box.width, height: box.height } },
-        React.createElement('div', { className: 'box-header', onMouseDown: handleDragStart },
+        React.createElement('div', { className: 'box-header', onMouseDown: function(e) { e.stopPropagation(); setIsDragging(true); startRef.current = { x: e.clientX, y: e.clientY, bx: box.x, by: box.y }; } },
           React.createElement('div', { className: 'box-header-text' },
             React.createElement('div', { className: 'box-title' }, box.title),
             box.subtitle ? React.createElement('div', { className: 'box-subtitle' }, box.subtitle) : null
           ),
           React.createElement('div', { className: 'box-drag-hint' }, '⠿')
         ),
-        React.createElement('div', { className: 'box-resize-handle', onMouseDown: handleResizeStart })
+        React.createElement('div', { className: 'box-resize-handle', onMouseDown: function(e) { e.stopPropagation(); setIsResizing(true); startRef.current = { x: e.clientX, y: e.clientY, w: box.width, h: box.height }; } })
       );
     });
 
-    const StickyNote = memo(function StickyNote({ sticky, onUpdate, onDelete, zoom }) {
-      const [isEditing, setIsEditing] = useState(false);
-      const [text, setText] = useState(sticky.text || '');
-      const [isDragging, setIsDragging] = useState(false);
-      const [isResizing, setIsResizing] = useState(false);
-      const startRef = useRef({});
-      const textareaRef = useRef(null);
-      const fontSize = calculateFontSize(text, sticky.width, sticky.height);
+    var StickyNote = memo(function StickyNote(props) {
+      var sticky = props.sticky, onUpdate = props.onUpdate, onDelete = props.onDelete, zoom = props.zoom;
+      var [isEditing, setIsEditing] = useState(false);
+      var [text, setText] = useState(sticky.text || '');
+      var [isDragging, setIsDragging] = useState(false);
+      var [isResizing, setIsResizing] = useState(false);
+      var startRef = useRef({});
+      var textareaRef = useRef(null);
+      var fontSize = calculateFontSize(text, sticky.width, sticky.height);
 
-      useEffect(function() {
-        if (!isEditing) setText(sticky.text || '');
-      }, [sticky.text, isEditing]);
-
-      var handleDoubleClick = function(e) { e.stopPropagation(); setIsEditing(true); };
-      var handleTextChange = function(e) { setText(e.target.value); };
-      var handleBlur = function() { setIsEditing(false); onUpdate(sticky.id, { text: text }); };
-      var handleKeyDown = function(e) { if (e.key === 'Escape') { setIsEditing(false); onUpdate(sticky.id, { text: text }); } };
-
-      var handleDragStart = function(e) {
-        if (isEditing) return;
-        e.stopPropagation();
-        setIsDragging(true);
-        startRef.current = { x: e.clientX, y: e.clientY, stickyX: sticky.x, stickyY: sticky.y };
-      };
-
-      var handleResizeStart = function(e) {
-        e.stopPropagation();
-        setIsResizing(true);
-        startRef.current = { x: e.clientX, y: e.clientY, width: sticky.width, height: sticky.height };
-      };
-
-      var handleDeleteClick = function(e) {
-        e.stopPropagation();
-        if (text.trim() === '' || window.confirm('Delete this note?')) onDelete(sticky.id);
-      };
-
-      useEffect(function() {
-        if (isEditing && textareaRef.current) { textareaRef.current.focus(); textareaRef.current.select(); }
-      }, [isEditing]);
+      useEffect(function() { if (!isEditing) setText(sticky.text || ''); }, [sticky.text, isEditing]);
+      useEffect(function() { if (isEditing && textareaRef.current) { textareaRef.current.focus(); textareaRef.current.select(); } }, [isEditing]);
 
       useEffect(function() {
         if (!isDragging) return;
-        var handleMouseMove = function(e) {
-          onUpdate(sticky.id, {
-            x: startRef.current.stickyX + (e.clientX - startRef.current.x) / zoom,
-            y: startRef.current.stickyY + (e.clientY - startRef.current.y) / zoom
-          });
+        var fn = function(e) {
+          onUpdate(sticky.id, { x: startRef.current.sx + (e.clientX - startRef.current.x) / zoom, y: startRef.current.sy + (e.clientY - startRef.current.y) / zoom });
         };
-        var handleMouseUp = function() { setIsDragging(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isDragging, sticky.id, onUpdate, zoom]);
+        var up = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isDragging]);
 
       useEffect(function() {
         if (!isResizing) return;
-        var handleMouseMove = function(e) {
+        var fn = function(e) {
           onUpdate(sticky.id, {
-            width: Math.max(120, Math.min(600, startRef.current.width + (e.clientX - startRef.current.x) / zoom)),
-            height: Math.max(80, Math.min(500, startRef.current.height + (e.clientY - startRef.current.y) / zoom))
+            width: Math.max(120, Math.min(600, startRef.current.w + (e.clientX - startRef.current.x) / zoom)),
+            height: Math.max(80, Math.min(500, startRef.current.h + (e.clientY - startRef.current.y) / zoom))
           });
         };
-        var handleMouseUp = function() { setIsResizing(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isResizing, sticky.id, onUpdate, zoom]);
+        var up = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isResizing]);
 
       return React.createElement('div', {
         className: 'sticky-note' + (isEditing ? ' editing' : ''),
         style: { left: sticky.x, top: sticky.y, width: sticky.width, height: sticky.height, background: sticky.color },
-        onMouseDown: handleDragStart, onDoubleClick: handleDoubleClick
+        onMouseDown: function(e) { if (!isEditing) { e.stopPropagation(); setIsDragging(true); startRef.current = { x: e.clientX, y: e.clientY, sx: sticky.x, sy: sticky.y }; } },
+        onDoubleClick: function(e) { e.stopPropagation(); setIsEditing(true); }
       },
-        React.createElement('button', { className: 'delete-btn', onClick: handleDeleteClick }, '×'),
+        React.createElement('button', { className: 'delete-btn', onClick: function(e) { e.stopPropagation(); if (text.trim() === '' || window.confirm('Delete?')) onDelete(sticky.id); } }, '×'),
         isEditing
-          ? React.createElement('textarea', {
-              ref: textareaRef, className: 'sticky-textarea', value: text,
-              onChange: handleTextChange, onBlur: handleBlur, onKeyDown: handleKeyDown,
-              style: { fontSize: fontSize + 'px' }
-            })
-          : React.createElement('div', {
-              className: 'sticky-content',
-              style: { fontSize: fontSize + 'px', color: text ? '#333' : '#999' }
-            }, text || 'Double-click to type'),
-        React.createElement('div', { className: 'sticky-resize', onMouseDown: handleResizeStart })
+          ? React.createElement('textarea', { ref: textareaRef, className: 'sticky-textarea', value: text,
+              onChange: function(e) { setText(e.target.value); },
+              onBlur: function() { setIsEditing(false); onUpdate(sticky.id, { text: text }); },
+              onKeyDown: function(e) { if (e.key === 'Escape') { setIsEditing(false); onUpdate(sticky.id, { text: text }); } },
+              style: { fontSize: fontSize + 'px' } })
+          : React.createElement('div', { className: 'sticky-content', style: { fontSize: fontSize + 'px', color: text ? '#333' : '#999' } }, text || 'Double-click to type'),
+        React.createElement('div', { className: 'sticky-resize', onMouseDown: function(e) { e.stopPropagation(); setIsResizing(true); startRef.current = { x: e.clientX, y: e.clientY, w: sticky.width, h: sticky.height }; } })
       );
     });
 
-    const ImageElement = memo(function ImageElement({ image, onUpdate, onDelete, zoom }) {
-      const [isDragging, setIsDragging] = useState(false);
-      const [isResizing, setIsResizing] = useState(false);
-      const startRef = useRef({});
-
-      var handleDragStart = function(e) {
-        e.stopPropagation(); setIsDragging(true);
-        startRef.current = { x: e.clientX, y: e.clientY, imgX: image.x, imgY: image.y };
-      };
-      var handleResizeStart = function(e) {
-        e.stopPropagation(); setIsResizing(true);
-        startRef.current = { x: e.clientX, y: e.clientY, width: image.width, height: image.height };
-      };
-      var handleDeleteClick = function(e) {
-        e.stopPropagation();
-        if (window.confirm('Delete this image?')) onDelete(image.id);
-      };
+    var ImageElement = memo(function ImageElement(props) {
+      var image = props.image, onUpdate = props.onUpdate, onDelete = props.onDelete, zoom = props.zoom;
+      var [isDragging, setIsDragging] = useState(false);
+      var [isResizing, setIsResizing] = useState(false);
+      var startRef = useRef({});
 
       useEffect(function() {
         if (!isDragging) return;
-        var handleMouseMove = function(e) {
-          onUpdate(image.id, {
-            x: startRef.current.imgX + (e.clientX - startRef.current.x) / zoom,
-            y: startRef.current.imgY + (e.clientY - startRef.current.y) / zoom
-          });
+        var fn = function(e) {
+          onUpdate(image.id, { x: startRef.current.ix + (e.clientX - startRef.current.x) / zoom, y: startRef.current.iy + (e.clientY - startRef.current.y) / zoom });
         };
-        var handleMouseUp = function() { setIsDragging(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isDragging, image.id, onUpdate, zoom]);
+        var up = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isDragging]);
 
       useEffect(function() {
         if (!isResizing) return;
-        var handleMouseMove = function(e) {
-          var dx = (e.clientX - startRef.current.x) / zoom;
-          var newW = Math.max(100, startRef.current.width + dx);
-          var ratio = startRef.current.height / startRef.current.width;
-          onUpdate(image.id, { width: newW, height: newW * ratio });
+        var fn = function(e) {
+          var nw = Math.max(100, startRef.current.w + (e.clientX - startRef.current.x) / zoom);
+          onUpdate(image.id, { width: nw, height: nw * (startRef.current.h / startRef.current.w) });
         };
-        var handleMouseUp = function() { setIsResizing(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-      }, [isResizing, image.id, onUpdate, zoom]);
+        var up = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
+      }, [isResizing]);
 
-      return React.createElement('div', {
-        className: 'image-element',
-        style: { left: image.x, top: image.y, width: image.width, height: image.height },
-        onMouseDown: handleDragStart
-      },
-        React.createElement('button', { className: 'delete-btn', onClick: handleDeleteClick }, '×'),
+      return React.createElement('div', { className: 'image-element', style: { left: image.x, top: image.y, width: image.width, height: image.height },
+        onMouseDown: function(e) { e.stopPropagation(); setIsDragging(true); startRef.current = { x: e.clientX, y: e.clientY, ix: image.x, iy: image.y }; } },
+        React.createElement('button', { className: 'delete-btn', onClick: function(e) { e.stopPropagation(); if (window.confirm('Delete?')) onDelete(image.id); } }, '×'),
         React.createElement('img', { src: image.dataUrl, alt: '' }),
-        React.createElement('div', { className: 'sticky-resize', onMouseDown: handleResizeStart })
+        React.createElement('div', { className: 'sticky-resize', onMouseDown: function(e) { e.stopPropagation(); setIsResizing(true); startRef.current = { x: e.clientX, y: e.clientY, w: image.width, h: image.height }; } })
       );
     });
 
     function App() {
-      const [zoom, setZoom] = useState(0.75);
-      const [pan, setPan] = useState({ x: 50, y: 20 });
-      const [isPanning, setIsPanning] = useState(false);
-      const [boxes, setBoxes] = useState(INITIAL_BOXES);
-      const [stickies, setStickies] = useState([]);
-      const [images, setImages] = useState([]);
-      const panStartRef = useRef({});
-      const containerRef = useRef(null);
+      var [zoom, setZoom] = useState(0.75);
+      var [pan, setPan] = useState({ x: 50, y: 20 });
+      var [isPanning, setIsPanning] = useState(false);
+      var [boxes, setBoxes] = useState(INITIAL_BOXES);
+      var [stickies, setStickies] = useState([]);
+      var [images, setImages] = useState([]);
+      var panStartRef = useRef({});
+      var containerRef = useRef(null);
 
-      const boxesRef = useRef(boxes);
-      const stickiesRef = useRef(stickies);
-      const imagesRef = useRef(images);
+      var [roomScreen, setRoomScreen] = useState('choose');
+      var [roomCode, setRoomCode] = useState('');
+      var [joinCode, setJoinCode] = useState('');
+      var [isConnected, setIsConnected] = useState(false);
+      var [roomError, setRoomError] = useState('');
+      var [isSaving, setIsSaving] = useState(false);
+
+      var roomIdRef = useRef(null);
+      var channelRef = useRef(null);
+      var suppressRef = useRef(false);
+      var saveTimerRef = useRef(null);
+      var boxesRef = useRef(boxes);
+      var stickiesRef = useRef(stickies);
+      var imagesRef = useRef(images);
 
       useEffect(function() { boxesRef.current = boxes; }, [boxes]);
       useEffect(function() { stickiesRef.current = stickies; }, [stickies]);
       useEffect(function() { imagesRef.current = images; }, [images]);
 
-      const [roomScreen, setRoomScreen] = useState('choose');
-      const [roomCode, setRoomCode] = useState('');
-      const [joinCode, setJoinCode] = useState('');
-      const [peerCount, setPeerCount] = useState(0);
-      const [isConnected, setIsConnected] = useState(false);
-      const peerRef = useRef(null);
-      const connectionsRef = useRef([]);
-      const isHostRef = useRef(false);
-      const suppressBroadcastRef = useRef(false);
-
-      const broadcastNow = useCallback(function() {
-        if (suppressBroadcastRef.current) return;
-        var msg = JSON.stringify({
-          type: 'STATE_UPDATE',
-          boxes: boxesRef.current,
-          stickies: stickiesRef.current,
-          images: imagesRef.current
-        });
-        connectionsRef.current.forEach(function(conn) {
-          if (conn.open) {
-            try { conn.send(msg); } catch(e) { console.error('Send error:', e); }
-          }
-        });
+      var saveToSupabase = useCallback(function() {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(function() {
+          if (!roomIdRef.current || suppressRef.current) return;
+          setIsSaving(true);
+          sb.from('board_rooms').update({
+            boxes: boxesRef.current,
+            stickies: stickiesRef.current,
+            images: imagesRef.current,
+            updated_at: new Date().toISOString()
+          }).eq('id', roomIdRef.current).then(function(res) {
+            setIsSaving(false);
+            if (res.error) console.error('Save error:', res.error);
+          });
+        }, 300);
       }, []);
 
-      const handleIncomingData = useCallback(function(data) {
-        try {
-          var parsed = JSON.parse(data);
-          if (parsed.type === 'STATE_UPDATE') {
-            suppressBroadcastRef.current = true;
-            boxesRef.current = parsed.boxes;
-            stickiesRef.current = parsed.stickies;
-            imagesRef.current = parsed.images;
-            setBoxes(parsed.boxes);
-            setStickies(parsed.stickies);
-            setImages(parsed.images);
-            if (isHostRef.current) {
-              connectionsRef.current.forEach(function(conn) {
-                if (conn.open) {
-                  try { conn.send(data); } catch(e) {}
-                }
-              });
-            }
-            setTimeout(function() { suppressBroadcastRef.current = false; }, 50);
-          }
-        } catch(e) { console.error('Parse error:', e); }
+      var subscribeToRoom = useCallback(function(code) {
+        if (channelRef.current) channelRef.current.unsubscribe();
+        var channel = sb.channel('room-' + code).on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'board_rooms',
+          filter: 'room_code=eq.' + code
+        }, function(payload) {
+          var d = payload.new;
+          suppressRef.current = true;
+          if (d.boxes) { boxesRef.current = d.boxes; setBoxes(d.boxes); }
+          if (d.stickies) { stickiesRef.current = d.stickies; setStickies(d.stickies); }
+          if (d.images) { imagesRef.current = d.images; setImages(d.images); }
+          setTimeout(function() { suppressRef.current = false; }, 100);
+        }).subscribe(function(status) {
+          console.log('Realtime status:', status);
+        });
+        channelRef.current = channel;
       }, []);
 
-      const createRoom = useCallback(function() {
+      var createRoom = useCallback(function() {
         var code = generateRoomCode();
-        setRoomCode(code);
-        isHostRef.current = true;
-        var peer = new Peer('rr-sprint-' + code);
-        peerRef.current = peer;
-
-        peer.on('open', function(id) {
-          console.log('Room created:', id);
+        setRoomError('');
+        sb.from('board_rooms').insert({
+          room_code: code,
+          boxes: INITIAL_BOXES,
+          stickies: [],
+          images: []
+        }).select().then(function(res) {
+          if (res.error) {
+            console.error('Create error:', res.error);
+            setRoomError('Failed to create room. Try again.');
+            return;
+          }
+          var row = res.data[0];
+          roomIdRef.current = row.id;
+          setRoomCode(code);
           setIsConnected(true);
+          subscribeToRoom(code);
           setRoomScreen('host');
         });
+      }, [subscribeToRoom]);
 
-        peer.on('connection', function(conn) {
-          conn.on('open', function() {
-            connectionsRef.current.push(conn);
-            setPeerCount(connectionsRef.current.filter(function(c) { return c.open; }).length);
-            setTimeout(function() {
-              conn.send(JSON.stringify({
-                type: 'STATE_UPDATE',
-                boxes: boxesRef.current,
-                stickies: stickiesRef.current,
-                images: imagesRef.current
-              }));
-            }, 500);
-          });
-          conn.on('data', function(d) { handleIncomingData(d); });
-          conn.on('close', function() {
-            connectionsRef.current = connectionsRef.current.filter(function(c) { return c !== conn; });
-            setPeerCount(connectionsRef.current.filter(function(c) { return c.open; }).length);
-          });
-        });
-
-        peer.on('error', function(err) {
-          console.error('Peer error:', err);
-          if (err.type === 'unavailable-id') {
-            alert('Room code in use. Try again.');
-            setRoomScreen('choose');
-          }
-        });
-      }, [handleIncomingData]);
-
-      const joinRoom = useCallback(function() {
+      var joinRoom = useCallback(function() {
         if (!joinCode || joinCode.length < 6) return;
         var code = joinCode.toUpperCase();
-        setRoomCode(code);
-        isHostRef.current = false;
-        var peer = new Peer();
-        peerRef.current = peer;
-
-        peer.on('open', function() {
-          var conn = peer.connect('rr-sprint-' + code, { reliable: true });
-          conn.on('open', function() {
-            connectionsRef.current.push(conn);
-            setIsConnected(true);
-            setRoomScreen('active');
-            setPeerCount(1);
-          });
-          conn.on('data', function(d) { handleIncomingData(d); });
-          conn.on('close', function() {
-            connectionsRef.current = [];
-            setPeerCount(0);
-            setIsConnected(false);
-          });
+        setRoomError('');
+        sb.from('board_rooms').select('*').eq('room_code', code).then(function(res) {
+          if (res.error || !res.data || res.data.length === 0) {
+            setRoomError('Room not found. Check the code.');
+            return;
+          }
+          var row = res.data[0];
+          roomIdRef.current = row.id;
+          setRoomCode(code);
+          boxesRef.current = row.boxes || INITIAL_BOXES;
+          stickiesRef.current = row.stickies || [];
+          imagesRef.current = row.images || [];
+          setBoxes(row.boxes || INITIAL_BOXES);
+          setStickies(row.stickies || []);
+          setImages(row.images || []);
+          setIsConnected(true);
+          subscribeToRoom(code);
+          setRoomScreen('active');
         });
+      }, [joinCode, subscribeToRoom]);
 
-        peer.on('error', function(err) {
-          console.error('Peer error:', err);
-          alert('Could not connect. Check code and try again.');
-          setRoomScreen('join');
-        });
-      }, [joinCode, handleIncomingData]);
+      var skipRoom = function() { setRoomScreen('active'); };
 
-      const skipRoom = useCallback(function() {
-        setRoomScreen('active');
-        setIsConnected(false);
-      }, []);
-
-      // State change handlers with broadcast
-      const handleBoxResize = useCallback(function(boxId, width, height) {
+      // State changers with save
+      var handleBoxResize = useCallback(function(id, w, h) {
         setBoxes(function(prev) {
-          var next = prev.map(function(b) { return b.id === boxId ? Object.assign({}, b, { width: width, height: height }) : b; });
-          boxesRef.current = next;
-          broadcastNow();
-          return next;
+          var next = prev.map(function(b) { return b.id === id ? Object.assign({}, b, { width: w, height: h }) : b; });
+          boxesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      const handleBoxMove = useCallback(function(boxId, x, y) {
+      var handleBoxMove = useCallback(function(id, x, y) {
         setBoxes(function(prev) {
-          var next = prev.map(function(b) { return b.id === boxId ? Object.assign({}, b, { x: x, y: y }) : b; });
-          boxesRef.current = next;
-          broadcastNow();
-          return next;
+          var next = prev.map(function(b) { return b.id === id ? Object.assign({}, b, { x: x, y: y }) : b; });
+          boxesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      const createSticky = useCallback(function(color) {
+      var createSticky = useCallback(function(color) {
         var vcx = (window.innerWidth / 2 - pan.x) / zoom;
         var vcy = (window.innerHeight / 2 - pan.y) / zoom;
-        var offset = stickiesRef.current.length * 15;
-        var newSticky = {
+        var off = stickiesRef.current.length * 15;
+        var ns = {
           id: 'sticky-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-          x: vcx - 100 + offset, y: vcy - 80 + offset,
-          width: 200, height: 160,
-          color: STICKY_COLORS[color], text: '', type: 'sticky'
+          x: vcx - 100 + off, y: vcy - 80 + off,
+          width: 200, height: 160, color: STICKY_COLORS[color], text: ''
         };
         setStickies(function(prev) {
-          var next = prev.concat([newSticky]);
-          stickiesRef.current = next;
-          broadcastNow();
-          return next;
+          var next = prev.concat([ns]);
+          stickiesRef.current = next; saveToSupabase(); return next;
         });
-      }, [zoom, pan, broadcastNow]);
+      }, [zoom, pan, saveToSupabase]);
 
-      const updateSticky = useCallback(function(id, updates) {
+      var updateSticky = useCallback(function(id, updates) {
         setStickies(function(prev) {
           var next = prev.map(function(s) { return s.id === id ? Object.assign({}, s, updates) : s; });
-          stickiesRef.current = next;
-          broadcastNow();
-          return next;
+          stickiesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      const deleteSticky = useCallback(function(id) {
+      var deleteSticky = useCallback(function(id) {
         setStickies(function(prev) {
           var next = prev.filter(function(s) { return s.id !== id; });
-          stickiesRef.current = next;
-          broadcastNow();
-          return next;
+          stickiesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      const updateImage = useCallback(function(id, updates) {
+      var updateImage = useCallback(function(id, updates) {
         setImages(function(prev) {
           var next = prev.map(function(i) { return i.id === id ? Object.assign({}, i, updates) : i; });
-          imagesRef.current = next;
-          broadcastNow();
-          return next;
+          imagesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      const deleteImage = useCallback(function(id) {
+      var deleteImage = useCallback(function(id) {
         setImages(function(prev) {
           var next = prev.filter(function(i) { return i.id !== id; });
-          imagesRef.current = next;
-          broadcastNow();
-          return next;
+          imagesRef.current = next; saveToSupabase(); return next;
         });
-      }, [broadcastNow]);
+      }, [saveToSupabase]);
 
-      // Canvas handlers
-      const handleWheel = useCallback(function(e) {
+      // Canvas
+      var handleWheel = useCallback(function(e) {
         e.preventDefault();
         var sa = e.deltaY > 0 ? 0.95 : 1.05;
         var nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * sa));
         var rect = e.currentTarget.getBoundingClientRect();
-        var cx = e.clientX - rect.left;
-        var cy = e.clientY - rect.top;
+        var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
         setZoom(nz);
         setPan({ x: cx - (cx - pan.x) * (nz / zoom), y: cy - (cy - pan.y) * (nz / zoom) });
       }, [zoom, pan]);
@@ -717,63 +615,46 @@
       var handlePanStart = function(e) {
         var tag = e.target.tagName.toLowerCase();
         var cl = e.target.classList;
-        if (tag === 'textarea' || tag === 'button' ||
-            cl.contains('sticky-note') || cl.contains('sticky-resize') ||
-            cl.contains('box-resize-handle') || cl.contains('box-header') ||
-            cl.contains('box-title') || cl.contains('box-subtitle') ||
-            cl.contains('box-drag-hint') || cl.contains('box-header-text') ||
+        if (tag === 'textarea' || tag === 'button' || cl.contains('sticky-note') || cl.contains('sticky-resize') ||
+            cl.contains('box-resize-handle') || cl.contains('box-header') || cl.contains('box-title') ||
+            cl.contains('box-subtitle') || cl.contains('box-drag-hint') || cl.contains('box-header-text') ||
             cl.contains('image-element')) return;
         setIsPanning(true);
-        panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+        panStartRef.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
       };
 
       useEffect(function() {
         if (!isPanning) return;
-        var handleMouseMove = function(e) {
-          setPan({
-            x: panStartRef.current.panX + (e.clientX - panStartRef.current.x),
-            y: panStartRef.current.panY + (e.clientY - panStartRef.current.y)
-          });
-        };
-        var handleMouseUp = function() { setIsPanning(false); };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+        var fn = function(e) { setPan({ x: panStartRef.current.px + (e.clientX - panStartRef.current.x), y: panStartRef.current.py + (e.clientY - panStartRef.current.y) }); };
+        var up = function() { setIsPanning(false); };
+        document.addEventListener('mousemove', fn);
+        document.addEventListener('mouseup', up);
+        return function() { document.removeEventListener('mousemove', fn); document.removeEventListener('mouseup', up); };
       }, [isPanning]);
-
-      var handleZoomIn = function() { setZoom(function(p) { return Math.min(MAX_ZOOM, p + 0.1); }); };
-      var handleZoomOut = function() { setZoom(function(p) { return Math.max(MIN_ZOOM, p - 0.1); }); };
-      var handleZoomFit = function() { setZoom(0.65); setPan({ x: 50, y: 20 }); };
 
       // Image paste
       useEffect(function() {
-        var handlePaste = function(e) {
+        var fn = function(e) {
           if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
           var items = e.clipboardData && (e.clipboardData.items || e.clipboardData.files);
           if (!items) return;
           for (var i = 0; i < items.length; i++) {
-            var item = items[i];
-            if (item.type && item.type.indexOf('image') !== -1) {
+            if (items[i].type && items[i].type.indexOf('image') !== -1) {
               e.preventDefault();
-              var blob = item.getAsFile ? item.getAsFile() : item;
+              var blob = items[i].getAsFile ? items[i].getAsFile() : items[i];
               if (!blob) continue;
               var reader = new FileReader();
-              reader.onload = function(event) {
-                compressImage(event.target.result, 800, 0.7, function(compressedUrl, w, h) {
+              reader.onload = function(ev) {
+                compressImage(ev.target.result, 800, 0.7, function(url, w, h) {
                   var vcx = (window.innerWidth / 2 - pan.x) / zoom;
                   var vcy = (window.innerHeight / 2 - pan.y) / zoom;
-                  var displayW = Math.min(400, w);
-                  var displayH = displayW * (h / w);
+                  var dw = Math.min(400, w), dh = dw * (h / w);
                   setImages(function(prev) {
                     var next = prev.concat([{
-                      id: 'image-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-                      x: vcx - displayW / 2, y: vcy - displayH / 2,
-                      width: displayW, height: displayH,
-                      dataUrl: compressedUrl, type: 'image'
+                      id: 'img-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+                      x: vcx - dw / 2, y: vcy - dh / 2, width: dw, height: dh, dataUrl: url
                     }]);
-                    imagesRef.current = next;
-                    broadcastNow();
-                    return next;
+                    imagesRef.current = next; saveToSupabase(); return next;
                   });
                 });
               };
@@ -782,9 +663,9 @@
             }
           }
         };
-        window.addEventListener('paste', handlePaste);
-        return function() { window.removeEventListener('paste', handlePaste); };
-      }, [zoom, pan, broadcastNow]);
+        window.addEventListener('paste', fn);
+        return function() { window.removeEventListener('paste', fn); };
+      }, [zoom, pan, saveToSupabase]);
 
       // Room screens
       if (roomScreen === 'choose') {
@@ -796,7 +677,8 @@
               React.createElement('button', { className: 'room-btn room-btn-primary', onClick: createRoom }, 'Create Room'),
               React.createElement('button', { className: 'room-btn', onClick: function() { setRoomScreen('join'); } }, 'Join Room'),
               React.createElement('button', { className: 'room-back', onClick: skipRoom }, 'Continue without sync')
-            )
+            ),
+            roomError ? React.createElement('div', { className: 'room-error' }, roomError) : null
           )
         );
       }
@@ -827,12 +709,12 @@
             React.createElement('div', { style: { marginTop: '16px' } },
               React.createElement('button', { className: 'room-btn room-btn-primary', onClick: joinRoom }, 'Join')
             ),
+            roomError ? React.createElement('div', { className: 'room-error' }, roomError) : null,
             React.createElement('button', { className: 'room-back', onClick: function() { setRoomScreen('choose'); } }, 'Back')
           )
         );
       }
 
-      // Main board
       return React.createElement(React.Fragment, null,
         React.createElement('div', { className: 'header' }, 'RANGE ROVER ELECTRIC — CREATIVE SPRINT'),
         React.createElement('div', { className: 'footer' }, 'POWERED BY WPP OPEN'),
@@ -840,7 +722,8 @@
         isConnected ? React.createElement('div', { className: 'connection-bar' },
           React.createElement('div', { className: 'connection-dot' }),
           React.createElement('span', { className: 'connection-code' }, roomCode),
-          React.createElement('span', { className: 'connection-text' }, (peerCount + 1) + ' connected')
+          isSaving ? React.createElement('span', { className: 'saving-indicator' }, 'Saving...') :
+            React.createElement('span', { className: 'connection-text' }, 'Synced')
         ) : null,
 
         React.createElement('div', { className: 'sticky-pads' },
@@ -863,41 +746,25 @@
         ),
 
         React.createElement('div', { className: 'zoom-controls' },
-          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomOut }, '−'),
+          React.createElement('button', { className: 'zoom-btn', onClick: function() { setZoom(function(p) { return Math.max(MIN_ZOOM, p - 0.1); }); } }, '−'),
           React.createElement('div', { className: 'zoom-level' }, Math.round(zoom * 100) + '%'),
-          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomIn }, '+'),
+          React.createElement('button', { className: 'zoom-btn', onClick: function() { setZoom(function(p) { return Math.min(MAX_ZOOM, p + 0.1); }); } }, '+'),
           React.createElement('div', { className: 'zoom-divider' }),
-          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomFit, style: { fontSize: '11px', width: '32px', borderRadius: '6px' } }, 'FIT')
+          React.createElement('button', { className: 'zoom-btn', onClick: function() { setZoom(0.65); setPan({ x: 50, y: 20 }); }, style: { fontSize: '11px', width: '32px', borderRadius: '6px' } }, 'FIT')
         ),
 
-        React.createElement('div', {
-          ref: containerRef,
-          className: 'canvas-container' + (isPanning ? ' panning' : ''),
-          onWheel: handleWheel, onMouseDown: handlePanStart
-        },
-          React.createElement('div', {
-            className: 'canvas',
-            style: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }
-          },
-            ROW_LABELS.map(function(label, idx) {
-              return React.createElement('div', { key: idx, className: 'row-label', style: { left: label.x, top: label.y } }, label.text);
-            }),
-            boxes.map(function(box) {
-              return React.createElement(ContainerBox, { key: box.id, box: box, onResize: handleBoxResize, onMove: handleBoxMove, zoom: zoom });
-            }),
-            stickies.map(function(sticky) {
-              return React.createElement(StickyNote, { key: sticky.id, sticky: sticky, onUpdate: updateSticky, onDelete: deleteSticky, zoom: zoom });
-            }),
-            images.map(function(image) {
-              return React.createElement(ImageElement, { key: image.id, image: image, onUpdate: updateImage, onDelete: deleteImage, zoom: zoom });
-            })
+        React.createElement('div', { ref: containerRef, className: 'canvas-container' + (isPanning ? ' panning' : ''), onWheel: handleWheel, onMouseDown: handlePanStart },
+          React.createElement('div', { className: 'canvas', style: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: 'translate(' + pan.x + 'px,' + pan.y + 'px) scale(' + zoom + ')' } },
+            ROW_LABELS.map(function(l, i) { return React.createElement('div', { key: i, className: 'row-label', style: { left: l.x, top: l.y } }, l.text); }),
+            boxes.map(function(b) { return React.createElement(ContainerBox, { key: b.id, box: b, onResize: handleBoxResize, onMove: handleBoxMove, zoom: zoom }); }),
+            stickies.map(function(s) { return React.createElement(StickyNote, { key: s.id, sticky: s, onUpdate: updateSticky, onDelete: deleteSticky, zoom: zoom }); }),
+            images.map(function(im) { return React.createElement(ImageElement, { key: im.id, image: im, onUpdate: updateImage, onDelete: deleteImage, zoom: zoom }); })
           )
         )
       );
     }
 
-    var root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(React.createElement(App));
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 
 </body></html>
