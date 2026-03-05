@@ -1,0 +1,903 @@
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Range Rover Electric — Creative Sprint</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
+  <script crossorigin="" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin="" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      overflow: hidden;
+      background: #1E2420;
+      color: #A8B0B0;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root { width: 100vw; height: 100vh; position: relative; }
+    .header {
+      position: fixed; top: 0; left: 0; padding: 16px 20px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 5px;
+      color: #8B7D8B; z-index: 1000; pointer-events: none;
+    }
+    .footer {
+      position: fixed; bottom: 0; right: 0; padding: 12px 16px;
+      font-size: 9px; letter-spacing: 2px; color: #3A433A;
+      z-index: 1000; pointer-events: none;
+    }
+    .canvas-container {
+      width: 100%; height: 100%; overflow: hidden;
+      cursor: grab; position: relative;
+    }
+    .canvas-container.panning { cursor: grabbing; }
+    .canvas { transform-origin: 0 0; position: absolute; }
+    .zoom-controls {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(42,51,42,0.95); padding: 10px 16px;
+      border-radius: 24px; border: 1px solid #3A433A;
+      z-index: 1000; backdrop-filter: blur(10px);
+    }
+    .zoom-btn {
+      width: 30px; height: 30px; border: 1px solid #3A433A;
+      background: transparent; color: #A8B0B0; border-radius: 50%;
+      cursor: pointer; font-size: 16px; display: flex;
+      align-items: center; justify-content: center; transition: all 0.2s;
+    }
+    .zoom-btn:hover { background: #3A433A; color: #FFFFFF; }
+    .zoom-level {
+      font-size: 11px; font-weight: 500; letter-spacing: 1px;
+      color: #A8B0B0; min-width: 45px; text-align: center;
+    }
+    .zoom-divider { width: 1px; height: 20px; background: #3A433A; }
+    .sticky-pads {
+      position: fixed; left: 20px; top: 50%; transform: translateY(-50%);
+      display: flex; flex-direction: column; gap: 24px; z-index: 1000;
+    }
+    .sticky-pad {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 8px; cursor: pointer; transition: transform 0.2s;
+    }
+    .sticky-pad:hover { transform: scale(1.05); }
+    .sticky-pad:active { transform: scale(0.95); }
+    .pad-stack { position: relative; width: 56px; height: 56px; }
+    .pad-square {
+      position: absolute; width: 46px; height: 46px;
+      border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .pad-square:nth-child(1) { top: 0; left: 5px; opacity: 0.25; }
+    .pad-square:nth-child(2) { top: 3px; left: 3px; opacity: 0.5; }
+    .pad-square:nth-child(3) { top: 6px; left: 0; }
+    .pad-label {
+      font-size: 8px; text-transform: uppercase; letter-spacing: 2px;
+      color: #6B7A6B; font-weight: 500;
+    }
+    .container-box {
+      position: absolute; background: rgba(42,51,42,0.6);
+      border: 1px solid #3A433A; border-radius: 4px;
+      z-index: 1; pointer-events: none;
+    }
+    .box-header {
+      height: 40px; background: rgba(42,51,42,0.8);
+      border-bottom: 1px solid #3A433A; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      pointer-events: auto; cursor: move;
+    }
+    .box-header-text { display: flex; flex-direction: column; justify-content: center; }
+    .box-title { font-size: 12px; font-weight: 500; letter-spacing: 1px; color: #FFFFFF; }
+    .box-subtitle { font-size: 10px; letter-spacing: 1px; color: #8B7D8B; margin-top: 1px; }
+    .box-drag-hint { font-size: 14px; color: #3A433A; cursor: move; user-select: none; }
+    .box-resize-handle {
+      position: absolute; bottom: 0; right: 0; width: 24px; height: 24px;
+      cursor: nwse-resize; z-index: 2; pointer-events: auto;
+    }
+    .box-resize-handle::after {
+      content: ''; position: absolute; bottom: 4px; right: 4px;
+      width: 0; height: 0; border-style: solid;
+      border-width: 0 0 10px 10px;
+      border-color: transparent transparent #3A433A transparent;
+    }
+    .sticky-note {
+      position: absolute; border-radius: 3px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25); z-index: 10;
+      cursor: move; padding: 12px; overflow: hidden; transition: box-shadow 0.2s;
+    }
+    .sticky-note:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
+    .sticky-note.editing { cursor: default; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+    .sticky-content {
+      width: 100%; height: 100%; color: #333; line-height: 1.4;
+      word-wrap: break-word; overflow: hidden; display: flex;
+      align-items: center; justify-content: center; text-align: center;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+    .sticky-textarea {
+      width: 100%; height: 100%; border: none; background: transparent;
+      resize: none; outline: none; font-family: 'Inter', Arial, sans-serif;
+      color: #333; line-height: 1.4; padding: 0;
+    }
+    .delete-btn {
+      position: absolute; top: 4px; right: 4px; width: 20px; height: 20px;
+      border-radius: 50%; background: rgba(0,0,0,0.08); color: #999;
+      border: none; cursor: pointer; display: none; align-items: center;
+      justify-content: center; font-size: 12px; z-index: 3; transition: background 0.2s;
+    }
+    .sticky-note:hover .delete-btn, .image-element:hover .delete-btn { display: flex; }
+    .delete-btn:hover { background: rgba(0,0,0,0.15); color: #666; }
+    .sticky-resize {
+      position: absolute; bottom: 0; right: 0; width: 24px; height: 24px;
+      cursor: nwse-resize; z-index: 3;
+    }
+    .sticky-resize::after {
+      content: ''; position: absolute; bottom: 3px; right: 3px;
+      width: 0; height: 0; border-style: solid;
+      border-width: 0 0 8px 8px;
+      border-color: transparent transparent rgba(0,0,0,0.15) transparent;
+    }
+    .image-element {
+      position: absolute; border: 1px solid #3A433A; border-radius: 3px;
+      z-index: 10; cursor: move; overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    }
+    .image-element img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .row-label {
+      position: absolute; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 5px; color: #3A433A; font-weight: 500;
+      transform: rotate(-90deg); transform-origin: center;
+      white-space: nowrap; pointer-events: none;
+    }
+    .room-overlay {
+      position: fixed; inset: 0; background: rgba(30,36,32,0.95);
+      z-index: 2000; display: flex; align-items: center;
+      justify-content: center; backdrop-filter: blur(10px);
+    }
+    .room-modal { text-align: center; max-width: 400px; width: 90%; }
+    .room-title {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 5px;
+      color: #8B7D8B; margin-bottom: 12px;
+    }
+    .room-heading {
+      font-size: 28px; font-weight: 300; letter-spacing: 1px;
+      color: #FFFFFF; margin-bottom: 40px;
+    }
+    .room-actions { display: flex; flex-direction: column; gap: 16px; }
+    .room-btn {
+      padding: 14px 32px; border: 1px solid #3A433A; background: transparent;
+      color: #A8B0B0; font-family: 'Inter', Arial, sans-serif; font-size: 13px;
+      letter-spacing: 2px; text-transform: uppercase; border-radius: 4px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .room-btn:hover { background: #3A433A; color: #FFFFFF; }
+    .room-btn-primary { background: #3A433A; color: #FFFFFF; }
+    .room-btn-primary:hover { background: #4a5c4a; }
+    .room-input {
+      padding: 14px 20px; border: 1px solid #3A433A;
+      background: rgba(42,51,42,0.5); color: #FFFFFF;
+      font-family: 'Inter', Arial, sans-serif; font-size: 20px;
+      letter-spacing: 8px; text-align: center; text-transform: uppercase;
+      border-radius: 4px; outline: none; width: 100%;
+    }
+    .room-input::placeholder { color: #555; letter-spacing: 4px; font-size: 13px; }
+    .room-input:focus { border-color: #8B7D8B; }
+    .room-back {
+      margin-top: 24px; background: none; border: none; color: #555;
+      font-family: 'Inter', Arial, sans-serif; font-size: 11px;
+      letter-spacing: 2px; cursor: pointer; text-transform: uppercase;
+    }
+    .room-back:hover { color: #8B7D8B; }
+    .room-code-display {
+      font-size: 36px; font-weight: 300; letter-spacing: 12px;
+      color: #FFFFFF; margin: 20px 0; font-family: 'Inter', monospace;
+    }
+    .room-code-hint {
+      font-size: 11px; color: #555; letter-spacing: 1px; margin-bottom: 24px;
+    }
+    .connection-bar {
+      position: fixed; top: 16px; right: 20px; display: flex;
+      align-items: center; gap: 10px; z-index: 1000;
+      background: rgba(42,51,42,0.9); padding: 8px 14px;
+      border-radius: 20px; border: 1px solid #3A433A;
+    }
+    .connection-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #4a7c59; box-shadow: 0 0 6px rgba(74,124,89,0.5);
+    }
+    .connection-dot.disconnected {
+      background: #7c4a4a; box-shadow: 0 0 6px rgba(124,74,74,0.5);
+    }
+    .connection-text {
+      font-size: 9px; letter-spacing: 2px; color: #A8B0B0; text-transform: uppercase;
+    }
+    .connection-code {
+      font-size: 10px; letter-spacing: 3px; color: #8B7D8B; font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, memo } = React;
+
+    const CANVAS_WIDTH = 5000;
+    const CANVAS_HEIGHT = 3000;
+    const MIN_ZOOM = 0.25;
+    const MAX_ZOOM = 2;
+    const GRID_SNAP = 50;
+    const STICKY_COLORS = { yellow: '#FFF3B0', blue: '#B0D4FF' };
+
+    const INITIAL_BOXES = [
+      { id: 'box1', x: 300, y: 100, width: 450, height: 320, title: 'RR Legacy', subtitle: 'Territory 1: Brand-first' },
+      { id: 'box2', x: 800, y: 100, width: 450, height: 320, title: 'British Icon Electrified', subtitle: 'Territory 2: Balanced' },
+      { id: 'box3', x: 1300, y: 100, width: 450, height: 320, title: 'Electric Celebration', subtitle: 'Territory 3: Electric-first' },
+      { id: 'box4', x: 300, y: 470, width: 450, height: 320, title: 'RR Legacy Workshop Builds', subtitle: '' },
+      { id: 'box5', x: 800, y: 470, width: 450, height: 320, title: 'British Icon Electrified Workshop Builds', subtitle: '' },
+      { id: 'box6', x: 1300, y: 470, width: 450, height: 320, title: 'Electric Celebration Workshop Builds', subtitle: '' },
+      { id: 'box7', x: 300, y: 840, width: 450, height: 320, title: 'RR Legacy Activation Plan', subtitle: '' },
+      { id: 'box8', x: 800, y: 840, width: 450, height: 320, title: 'British Icon Electrified Activation Plan', subtitle: '' },
+      { id: 'box9', x: 1300, y: 840, width: 450, height: 320, title: 'Electric Celebration Activation Plan', subtitle: '' },
+    ];
+
+    const ROW_LABELS = [
+      { text: 'TERRITORIES', x: 80, y: 260 },
+      { text: 'BUILDS', x: 80, y: 630 },
+      { text: 'ACTIVATIONS', x: 80, y: 1000 },
+    ];
+
+    function generateRoomCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+      return code;
+    }
+
+    function calculateFontSize(text, width, height) {
+      if (!text || text.trim() === '') return 15;
+      const textLength = text.length;
+      let fontSize = 22;
+      if (textLength > 200) fontSize = 10;
+      else if (textLength > 150) fontSize = 11;
+      else if (textLength > 100) fontSize = 12;
+      else if (textLength > 80) fontSize = 13;
+      else if (textLength > 60) fontSize = 14;
+      else if (textLength > 40) fontSize = 15;
+      else if (textLength > 20) fontSize = 17;
+      const availableHeight = height - 24;
+      const availableWidth = width - 24;
+      const estimatedLines = Math.ceil(textLength / (availableWidth / (fontSize * 0.6)));
+      if (estimatedLines * fontSize * 1.4 > availableHeight) fontSize = Math.max(10, fontSize - 2);
+      return Math.max(10, Math.min(22, fontSize));
+    }
+
+    function compressImage(dataUrl, maxWidth, quality, callback) {
+      var img = new window.Image();
+      img.onload = function() {
+        var canvas = document.createElement('canvas');
+        var ratio = Math.min(maxWidth / img.width, 1);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        callback(canvas.toDataURL('image/jpeg', quality), canvas.width, canvas.height);
+      };
+      img.src = dataUrl;
+    }
+
+    const ContainerBox = memo(function ContainerBox({ box, onResize, onMove, zoom }) {
+      const [isResizing, setIsResizing] = useState(false);
+      const [isDragging, setIsDragging] = useState(false);
+      const startRef = useRef({});
+
+      const handleDragStart = function(e) {
+        e.stopPropagation();
+        setIsDragging(true);
+        startRef.current = { x: e.clientX, y: e.clientY, boxX: box.x, boxY: box.y };
+      };
+
+      const handleResizeStart = function(e) {
+        e.stopPropagation();
+        setIsResizing(true);
+        startRef.current = { x: e.clientX, y: e.clientY, width: box.width, height: box.height };
+      };
+
+      useEffect(function() {
+        if (!isDragging) return;
+        var handleMouseMove = function(e) {
+          var dx = (e.clientX - startRef.current.x) / zoom;
+          var dy = (e.clientY - startRef.current.y) / zoom;
+          onMove(box.id, Math.round((startRef.current.boxX + dx) / GRID_SNAP) * GRID_SNAP, Math.round((startRef.current.boxY + dy) / GRID_SNAP) * GRID_SNAP);
+        };
+        var handleMouseUp = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isDragging, box.id, onMove, zoom]);
+
+      useEffect(function() {
+        if (!isResizing) return;
+        var handleMouseMove = function(e) {
+          var dx = (e.clientX - startRef.current.x) / zoom;
+          var dy = (e.clientY - startRef.current.y) / zoom;
+          onResize(box.id, Math.max(200, Math.round((startRef.current.width + dx) / GRID_SNAP) * GRID_SNAP), Math.max(150, Math.round((startRef.current.height + dy) / GRID_SNAP) * GRID_SNAP));
+        };
+        var handleMouseUp = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isResizing, box.id, onResize, zoom]);
+
+      return React.createElement('div', { className: 'container-box', style: { left: box.x, top: box.y, width: box.width, height: box.height } },
+        React.createElement('div', { className: 'box-header', onMouseDown: handleDragStart },
+          React.createElement('div', { className: 'box-header-text' },
+            React.createElement('div', { className: 'box-title' }, box.title),
+            box.subtitle ? React.createElement('div', { className: 'box-subtitle' }, box.subtitle) : null
+          ),
+          React.createElement('div', { className: 'box-drag-hint' }, '⠿')
+        ),
+        React.createElement('div', { className: 'box-resize-handle', onMouseDown: handleResizeStart })
+      );
+    });
+
+    const StickyNote = memo(function StickyNote({ sticky, onUpdate, onDelete, zoom }) {
+      const [isEditing, setIsEditing] = useState(false);
+      const [text, setText] = useState(sticky.text || '');
+      const [isDragging, setIsDragging] = useState(false);
+      const [isResizing, setIsResizing] = useState(false);
+      const startRef = useRef({});
+      const textareaRef = useRef(null);
+      const fontSize = calculateFontSize(text, sticky.width, sticky.height);
+
+      useEffect(function() {
+        if (!isEditing) setText(sticky.text || '');
+      }, [sticky.text, isEditing]);
+
+      var handleDoubleClick = function(e) { e.stopPropagation(); setIsEditing(true); };
+      var handleTextChange = function(e) { setText(e.target.value); };
+      var handleBlur = function() { setIsEditing(false); onUpdate(sticky.id, { text: text }); };
+      var handleKeyDown = function(e) { if (e.key === 'Escape') { setIsEditing(false); onUpdate(sticky.id, { text: text }); } };
+
+      var handleDragStart = function(e) {
+        if (isEditing) return;
+        e.stopPropagation();
+        setIsDragging(true);
+        startRef.current = { x: e.clientX, y: e.clientY, stickyX: sticky.x, stickyY: sticky.y };
+      };
+
+      var handleResizeStart = function(e) {
+        e.stopPropagation();
+        setIsResizing(true);
+        startRef.current = { x: e.clientX, y: e.clientY, width: sticky.width, height: sticky.height };
+      };
+
+      var handleDeleteClick = function(e) {
+        e.stopPropagation();
+        if (text.trim() === '' || window.confirm('Delete this note?')) onDelete(sticky.id);
+      };
+
+      useEffect(function() {
+        if (isEditing && textareaRef.current) { textareaRef.current.focus(); textareaRef.current.select(); }
+      }, [isEditing]);
+
+      useEffect(function() {
+        if (!isDragging) return;
+        var handleMouseMove = function(e) {
+          onUpdate(sticky.id, {
+            x: startRef.current.stickyX + (e.clientX - startRef.current.x) / zoom,
+            y: startRef.current.stickyY + (e.clientY - startRef.current.y) / zoom
+          });
+        };
+        var handleMouseUp = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isDragging, sticky.id, onUpdate, zoom]);
+
+      useEffect(function() {
+        if (!isResizing) return;
+        var handleMouseMove = function(e) {
+          onUpdate(sticky.id, {
+            width: Math.max(120, Math.min(600, startRef.current.width + (e.clientX - startRef.current.x) / zoom)),
+            height: Math.max(80, Math.min(500, startRef.current.height + (e.clientY - startRef.current.y) / zoom))
+          });
+        };
+        var handleMouseUp = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isResizing, sticky.id, onUpdate, zoom]);
+
+      return React.createElement('div', {
+        className: 'sticky-note' + (isEditing ? ' editing' : ''),
+        style: { left: sticky.x, top: sticky.y, width: sticky.width, height: sticky.height, background: sticky.color },
+        onMouseDown: handleDragStart, onDoubleClick: handleDoubleClick
+      },
+        React.createElement('button', { className: 'delete-btn', onClick: handleDeleteClick }, '×'),
+        isEditing
+          ? React.createElement('textarea', {
+              ref: textareaRef, className: 'sticky-textarea', value: text,
+              onChange: handleTextChange, onBlur: handleBlur, onKeyDown: handleKeyDown,
+              style: { fontSize: fontSize + 'px' }
+            })
+          : React.createElement('div', {
+              className: 'sticky-content',
+              style: { fontSize: fontSize + 'px', color: text ? '#333' : '#999' }
+            }, text || 'Double-click to type'),
+        React.createElement('div', { className: 'sticky-resize', onMouseDown: handleResizeStart })
+      );
+    });
+
+    const ImageElement = memo(function ImageElement({ image, onUpdate, onDelete, zoom }) {
+      const [isDragging, setIsDragging] = useState(false);
+      const [isResizing, setIsResizing] = useState(false);
+      const startRef = useRef({});
+
+      var handleDragStart = function(e) {
+        e.stopPropagation(); setIsDragging(true);
+        startRef.current = { x: e.clientX, y: e.clientY, imgX: image.x, imgY: image.y };
+      };
+      var handleResizeStart = function(e) {
+        e.stopPropagation(); setIsResizing(true);
+        startRef.current = { x: e.clientX, y: e.clientY, width: image.width, height: image.height };
+      };
+      var handleDeleteClick = function(e) {
+        e.stopPropagation();
+        if (window.confirm('Delete this image?')) onDelete(image.id);
+      };
+
+      useEffect(function() {
+        if (!isDragging) return;
+        var handleMouseMove = function(e) {
+          onUpdate(image.id, {
+            x: startRef.current.imgX + (e.clientX - startRef.current.x) / zoom,
+            y: startRef.current.imgY + (e.clientY - startRef.current.y) / zoom
+          });
+        };
+        var handleMouseUp = function() { setIsDragging(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isDragging, image.id, onUpdate, zoom]);
+
+      useEffect(function() {
+        if (!isResizing) return;
+        var handleMouseMove = function(e) {
+          var dx = (e.clientX - startRef.current.x) / zoom;
+          var newW = Math.max(100, startRef.current.width + dx);
+          var ratio = startRef.current.height / startRef.current.width;
+          onUpdate(image.id, { width: newW, height: newW * ratio });
+        };
+        var handleMouseUp = function() { setIsResizing(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isResizing, image.id, onUpdate, zoom]);
+
+      return React.createElement('div', {
+        className: 'image-element',
+        style: { left: image.x, top: image.y, width: image.width, height: image.height },
+        onMouseDown: handleDragStart
+      },
+        React.createElement('button', { className: 'delete-btn', onClick: handleDeleteClick }, '×'),
+        React.createElement('img', { src: image.dataUrl, alt: '' }),
+        React.createElement('div', { className: 'sticky-resize', onMouseDown: handleResizeStart })
+      );
+    });
+
+    function App() {
+      const [zoom, setZoom] = useState(0.75);
+      const [pan, setPan] = useState({ x: 50, y: 20 });
+      const [isPanning, setIsPanning] = useState(false);
+      const [boxes, setBoxes] = useState(INITIAL_BOXES);
+      const [stickies, setStickies] = useState([]);
+      const [images, setImages] = useState([]);
+      const panStartRef = useRef({});
+      const containerRef = useRef(null);
+
+      const boxesRef = useRef(boxes);
+      const stickiesRef = useRef(stickies);
+      const imagesRef = useRef(images);
+
+      useEffect(function() { boxesRef.current = boxes; }, [boxes]);
+      useEffect(function() { stickiesRef.current = stickies; }, [stickies]);
+      useEffect(function() { imagesRef.current = images; }, [images]);
+
+      const [roomScreen, setRoomScreen] = useState('choose');
+      const [roomCode, setRoomCode] = useState('');
+      const [joinCode, setJoinCode] = useState('');
+      const [peerCount, setPeerCount] = useState(0);
+      const [isConnected, setIsConnected] = useState(false);
+      const peerRef = useRef(null);
+      const connectionsRef = useRef([]);
+      const isHostRef = useRef(false);
+      const suppressBroadcastRef = useRef(false);
+
+      const broadcastNow = useCallback(function() {
+        if (suppressBroadcastRef.current) return;
+        var msg = JSON.stringify({
+          type: 'STATE_UPDATE',
+          boxes: boxesRef.current,
+          stickies: stickiesRef.current,
+          images: imagesRef.current
+        });
+        connectionsRef.current.forEach(function(conn) {
+          if (conn.open) {
+            try { conn.send(msg); } catch(e) { console.error('Send error:', e); }
+          }
+        });
+      }, []);
+
+      const handleIncomingData = useCallback(function(data) {
+        try {
+          var parsed = JSON.parse(data);
+          if (parsed.type === 'STATE_UPDATE') {
+            suppressBroadcastRef.current = true;
+            boxesRef.current = parsed.boxes;
+            stickiesRef.current = parsed.stickies;
+            imagesRef.current = parsed.images;
+            setBoxes(parsed.boxes);
+            setStickies(parsed.stickies);
+            setImages(parsed.images);
+            if (isHostRef.current) {
+              connectionsRef.current.forEach(function(conn) {
+                if (conn.open) {
+                  try { conn.send(data); } catch(e) {}
+                }
+              });
+            }
+            setTimeout(function() { suppressBroadcastRef.current = false; }, 50);
+          }
+        } catch(e) { console.error('Parse error:', e); }
+      }, []);
+
+      const createRoom = useCallback(function() {
+        var code = generateRoomCode();
+        setRoomCode(code);
+        isHostRef.current = true;
+        var peer = new Peer('rr-sprint-' + code);
+        peerRef.current = peer;
+
+        peer.on('open', function(id) {
+          console.log('Room created:', id);
+          setIsConnected(true);
+          setRoomScreen('host');
+        });
+
+        peer.on('connection', function(conn) {
+          conn.on('open', function() {
+            connectionsRef.current.push(conn);
+            setPeerCount(connectionsRef.current.filter(function(c) { return c.open; }).length);
+            setTimeout(function() {
+              conn.send(JSON.stringify({
+                type: 'STATE_UPDATE',
+                boxes: boxesRef.current,
+                stickies: stickiesRef.current,
+                images: imagesRef.current
+              }));
+            }, 500);
+          });
+          conn.on('data', function(d) { handleIncomingData(d); });
+          conn.on('close', function() {
+            connectionsRef.current = connectionsRef.current.filter(function(c) { return c !== conn; });
+            setPeerCount(connectionsRef.current.filter(function(c) { return c.open; }).length);
+          });
+        });
+
+        peer.on('error', function(err) {
+          console.error('Peer error:', err);
+          if (err.type === 'unavailable-id') {
+            alert('Room code in use. Try again.');
+            setRoomScreen('choose');
+          }
+        });
+      }, [handleIncomingData]);
+
+      const joinRoom = useCallback(function() {
+        if (!joinCode || joinCode.length < 6) return;
+        var code = joinCode.toUpperCase();
+        setRoomCode(code);
+        isHostRef.current = false;
+        var peer = new Peer();
+        peerRef.current = peer;
+
+        peer.on('open', function() {
+          var conn = peer.connect('rr-sprint-' + code, { reliable: true });
+          conn.on('open', function() {
+            connectionsRef.current.push(conn);
+            setIsConnected(true);
+            setRoomScreen('active');
+            setPeerCount(1);
+          });
+          conn.on('data', function(d) { handleIncomingData(d); });
+          conn.on('close', function() {
+            connectionsRef.current = [];
+            setPeerCount(0);
+            setIsConnected(false);
+          });
+        });
+
+        peer.on('error', function(err) {
+          console.error('Peer error:', err);
+          alert('Could not connect. Check code and try again.');
+          setRoomScreen('join');
+        });
+      }, [joinCode, handleIncomingData]);
+
+      const skipRoom = useCallback(function() {
+        setRoomScreen('active');
+        setIsConnected(false);
+      }, []);
+
+      // State change handlers with broadcast
+      const handleBoxResize = useCallback(function(boxId, width, height) {
+        setBoxes(function(prev) {
+          var next = prev.map(function(b) { return b.id === boxId ? Object.assign({}, b, { width: width, height: height }) : b; });
+          boxesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      const handleBoxMove = useCallback(function(boxId, x, y) {
+        setBoxes(function(prev) {
+          var next = prev.map(function(b) { return b.id === boxId ? Object.assign({}, b, { x: x, y: y }) : b; });
+          boxesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      const createSticky = useCallback(function(color) {
+        var vcx = (window.innerWidth / 2 - pan.x) / zoom;
+        var vcy = (window.innerHeight / 2 - pan.y) / zoom;
+        var offset = stickiesRef.current.length * 15;
+        var newSticky = {
+          id: 'sticky-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+          x: vcx - 100 + offset, y: vcy - 80 + offset,
+          width: 200, height: 160,
+          color: STICKY_COLORS[color], text: '', type: 'sticky'
+        };
+        setStickies(function(prev) {
+          var next = prev.concat([newSticky]);
+          stickiesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [zoom, pan, broadcastNow]);
+
+      const updateSticky = useCallback(function(id, updates) {
+        setStickies(function(prev) {
+          var next = prev.map(function(s) { return s.id === id ? Object.assign({}, s, updates) : s; });
+          stickiesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      const deleteSticky = useCallback(function(id) {
+        setStickies(function(prev) {
+          var next = prev.filter(function(s) { return s.id !== id; });
+          stickiesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      const updateImage = useCallback(function(id, updates) {
+        setImages(function(prev) {
+          var next = prev.map(function(i) { return i.id === id ? Object.assign({}, i, updates) : i; });
+          imagesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      const deleteImage = useCallback(function(id) {
+        setImages(function(prev) {
+          var next = prev.filter(function(i) { return i.id !== id; });
+          imagesRef.current = next;
+          broadcastNow();
+          return next;
+        });
+      }, [broadcastNow]);
+
+      // Canvas handlers
+      const handleWheel = useCallback(function(e) {
+        e.preventDefault();
+        var sa = e.deltaY > 0 ? 0.95 : 1.05;
+        var nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * sa));
+        var rect = e.currentTarget.getBoundingClientRect();
+        var cx = e.clientX - rect.left;
+        var cy = e.clientY - rect.top;
+        setZoom(nz);
+        setPan({ x: cx - (cx - pan.x) * (nz / zoom), y: cy - (cy - pan.y) * (nz / zoom) });
+      }, [zoom, pan]);
+
+      var handlePanStart = function(e) {
+        var tag = e.target.tagName.toLowerCase();
+        var cl = e.target.classList;
+        if (tag === 'textarea' || tag === 'button' ||
+            cl.contains('sticky-note') || cl.contains('sticky-resize') ||
+            cl.contains('box-resize-handle') || cl.contains('box-header') ||
+            cl.contains('box-title') || cl.contains('box-subtitle') ||
+            cl.contains('box-drag-hint') || cl.contains('box-header-text') ||
+            cl.contains('image-element')) return;
+        setIsPanning(true);
+        panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+      };
+
+      useEffect(function() {
+        if (!isPanning) return;
+        var handleMouseMove = function(e) {
+          setPan({
+            x: panStartRef.current.panX + (e.clientX - panStartRef.current.x),
+            y: panStartRef.current.panY + (e.clientY - panStartRef.current.y)
+          });
+        };
+        var handleMouseUp = function() { setIsPanning(false); };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return function() { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+      }, [isPanning]);
+
+      var handleZoomIn = function() { setZoom(function(p) { return Math.min(MAX_ZOOM, p + 0.1); }); };
+      var handleZoomOut = function() { setZoom(function(p) { return Math.max(MIN_ZOOM, p - 0.1); }); };
+      var handleZoomFit = function() { setZoom(0.65); setPan({ x: 50, y: 20 }); };
+
+      // Image paste
+      useEffect(function() {
+        var handlePaste = function(e) {
+          if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+          var items = e.clipboardData && (e.clipboardData.items || e.clipboardData.files);
+          if (!items) return;
+          for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.type && item.type.indexOf('image') !== -1) {
+              e.preventDefault();
+              var blob = item.getAsFile ? item.getAsFile() : item;
+              if (!blob) continue;
+              var reader = new FileReader();
+              reader.onload = function(event) {
+                compressImage(event.target.result, 800, 0.7, function(compressedUrl, w, h) {
+                  var vcx = (window.innerWidth / 2 - pan.x) / zoom;
+                  var vcy = (window.innerHeight / 2 - pan.y) / zoom;
+                  var displayW = Math.min(400, w);
+                  var displayH = displayW * (h / w);
+                  setImages(function(prev) {
+                    var next = prev.concat([{
+                      id: 'image-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+                      x: vcx - displayW / 2, y: vcy - displayH / 2,
+                      width: displayW, height: displayH,
+                      dataUrl: compressedUrl, type: 'image'
+                    }]);
+                    imagesRef.current = next;
+                    broadcastNow();
+                    return next;
+                  });
+                });
+              };
+              reader.readAsDataURL(blob);
+              break;
+            }
+          }
+        };
+        window.addEventListener('paste', handlePaste);
+        return function() { window.removeEventListener('paste', handlePaste); };
+      }, [zoom, pan, broadcastNow]);
+
+      // Room screens
+      if (roomScreen === 'choose') {
+        return React.createElement('div', { className: 'room-overlay' },
+          React.createElement('div', { className: 'room-modal' },
+            React.createElement('div', { className: 'room-title' }, 'Range Rover Electric'),
+            React.createElement('div', { className: 'room-heading' }, 'Creative Sprint Board'),
+            React.createElement('div', { className: 'room-actions' },
+              React.createElement('button', { className: 'room-btn room-btn-primary', onClick: createRoom }, 'Create Room'),
+              React.createElement('button', { className: 'room-btn', onClick: function() { setRoomScreen('join'); } }, 'Join Room'),
+              React.createElement('button', { className: 'room-back', onClick: skipRoom }, 'Continue without sync')
+            )
+          )
+        );
+      }
+
+      if (roomScreen === 'host') {
+        return React.createElement('div', { className: 'room-overlay' },
+          React.createElement('div', { className: 'room-modal' },
+            React.createElement('div', { className: 'room-title' }, 'Room Created'),
+            React.createElement('div', { className: 'room-heading' }, 'Share this code'),
+            React.createElement('div', { className: 'room-code-display' }, roomCode),
+            React.createElement('div', { className: 'room-code-hint' }, 'Others enter this code to join your board'),
+            React.createElement('button', { className: 'room-btn room-btn-primary', onClick: function() { setRoomScreen('active'); } }, 'Open Board')
+          )
+        );
+      }
+
+      if (roomScreen === 'join') {
+        return React.createElement('div', { className: 'room-overlay' },
+          React.createElement('div', { className: 'room-modal' },
+            React.createElement('div', { className: 'room-title' }, 'Join Room'),
+            React.createElement('div', { className: 'room-heading' }, 'Enter room code'),
+            React.createElement('input', {
+              className: 'room-input', value: joinCode,
+              onChange: function(e) { setJoinCode(e.target.value.toUpperCase().slice(0, 6)); },
+              placeholder: 'XXXXXX', maxLength: 6, autoFocus: true,
+              onKeyDown: function(e) { if (e.key === 'Enter') joinRoom(); }
+            }),
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', { className: 'room-btn room-btn-primary', onClick: joinRoom }, 'Join')
+            ),
+            React.createElement('button', { className: 'room-back', onClick: function() { setRoomScreen('choose'); } }, 'Back')
+          )
+        );
+      }
+
+      // Main board
+      return React.createElement(React.Fragment, null,
+        React.createElement('div', { className: 'header' }, 'RANGE ROVER ELECTRIC — CREATIVE SPRINT'),
+        React.createElement('div', { className: 'footer' }, 'POWERED BY WPP OPEN'),
+
+        isConnected ? React.createElement('div', { className: 'connection-bar' },
+          React.createElement('div', { className: 'connection-dot' }),
+          React.createElement('span', { className: 'connection-code' }, roomCode),
+          React.createElement('span', { className: 'connection-text' }, (peerCount + 1) + ' connected')
+        ) : null,
+
+        React.createElement('div', { className: 'sticky-pads' },
+          React.createElement('div', { className: 'sticky-pad', onClick: function() { createSticky('yellow'); } },
+            React.createElement('div', { className: 'pad-stack' },
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.yellow } }),
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.yellow } }),
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.yellow } })
+            ),
+            React.createElement('div', { className: 'pad-label' }, 'Human Idea')
+          ),
+          React.createElement('div', { className: 'sticky-pad', onClick: function() { createSticky('blue'); } },
+            React.createElement('div', { className: 'pad-stack' },
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.blue } }),
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.blue } }),
+              React.createElement('div', { className: 'pad-square', style: { background: STICKY_COLORS.blue } })
+            ),
+            React.createElement('div', { className: 'pad-label' }, 'Agent Output')
+          )
+        ),
+
+        React.createElement('div', { className: 'zoom-controls' },
+          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomOut }, '−'),
+          React.createElement('div', { className: 'zoom-level' }, Math.round(zoom * 100) + '%'),
+          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomIn }, '+'),
+          React.createElement('div', { className: 'zoom-divider' }),
+          React.createElement('button', { className: 'zoom-btn', onClick: handleZoomFit, style: { fontSize: '11px', width: '32px', borderRadius: '6px' } }, 'FIT')
+        ),
+
+        React.createElement('div', {
+          ref: containerRef,
+          className: 'canvas-container' + (isPanning ? ' panning' : ''),
+          onWheel: handleWheel, onMouseDown: handlePanStart
+        },
+          React.createElement('div', {
+            className: 'canvas',
+            style: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }
+          },
+            ROW_LABELS.map(function(label, idx) {
+              return React.createElement('div', { key: idx, className: 'row-label', style: { left: label.x, top: label.y } }, label.text);
+            }),
+            boxes.map(function(box) {
+              return React.createElement(ContainerBox, { key: box.id, box: box, onResize: handleBoxResize, onMove: handleBoxMove, zoom: zoom });
+            }),
+            stickies.map(function(sticky) {
+              return React.createElement(StickyNote, { key: sticky.id, sticky: sticky, onUpdate: updateSticky, onDelete: deleteSticky, zoom: zoom });
+            }),
+            images.map(function(image) {
+              return React.createElement(ImageElement, { key: image.id, image: image, onUpdate: updateImage, onDelete: deleteImage, zoom: zoom });
+            })
+          )
+        )
+      );
+    }
+
+    var root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+
+</body></html>
